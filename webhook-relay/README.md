@@ -30,7 +30,7 @@ and eliminate most of the known or unknown vulnerabilities.
     docker run -d --restart=always --name=webhook-relay \
         -e AWS_REGION=ap-northeast-1 \
         -e QUEUE_URL=https://sqs.ap-northeast-1.amazonaws.com/xxxx/github-webhook \
-        -e JENKINS_GITHUB_HOOK_URL=http://your-jenkins-server/ghprbhook/ \
+        -e JENKINS_BASE_URL=http://your-jenkins-server/ \
         -e AWS_ACCESS_KEY_ID=your-aws-access-key \
         -e AWS_SECRET_ACCESS_KEY=your-aws-secret-key \
         mountkin/webhook-relay

@@ -105,6 +105,15 @@ func deleteMessage(msg *sqs.Message) error {
 	return err
 }
 
+func getJenkinsHookURL(baseURL, event string) string {
+	switch event {
+	case "push":
+		return baseURL + "/github-webhook/"
+	default:
+		return baseURL + "/ghprbhook/"
+	}
+}
+
 func toJenkins(url string) error {
 	for {
 		out, err := queue.ReceiveMessage(&sqs.ReceiveMessageInput{
@@ -124,9 +133,11 @@ func toJenkins(url string) error {
 				continue
 			}
 
-			log.Printf("Got webhook message %s, event: %s", *msg.MessageId, pl.Headers["X-GitHub-Event"])
+			event := pl.Headers["X-GitHub-Event"]
+			log.Printf("Got webhook message %s, event: %s", *msg.MessageId, event)
+			hookURL := getJenkinsHookURL(url, event)
 
-			req, _ := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(pl.Payload))
+			req, _ := http.NewRequest(http.MethodPost, hookURL, bytes.NewBufferString(pl.Payload))
 			for k, v := range pl.Headers {
 				req.Header.Set(k, v)
 			}
@@ -134,15 +145,15 @@ func toJenkins(url string) error {
 			req = req.WithContext(ctxTimeout)
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
-				log.Printf("Failed to relay message to jenkins: %v", err)
+				log.Printf("Failed to relay message to jenkins(%s): %v", hookURL, err)
 			} else {
 				if resp.StatusCode == http.StatusOK {
-					log.Printf("Successfully relayed %s event %s to jenkins", req.Header["X-Github-Event"], *msg.MessageId)
+					log.Printf("Successfully relayed %s event %s to jenkins(%s)", req.Header["X-Github-Event"], *msg.MessageId, hookURL)
 					io.Copy(ioutil.Discard, resp.Body)
 				} else {
 					b, _ := ioutil.ReadAll(resp.Body)
-					log.Printf("Error occured while realying %s event %s to jenkins. Jenkins response: %s",
-						req.Header["X-Github-Event"], *msg.MessageId, string(b))
+					log.Printf("Error occured while realying %s event %s to jenkins(%s). Jenkins response: %s",
+						req.Header["X-Github-Event"], *msg.MessageId, hookURL, string(b))
 				}
 				resp.Body.Close()
 			}
@@ -162,11 +173,11 @@ func main() {
 	flag.Parse()
 
 	if mode == "client" {
-		jenkinsURL := strings.TrimSpace(os.Getenv("JENKINS_GITHUB_HOOK_URL"))
+		jenkinsURL := strings.TrimSpace(os.Getenv("JENKINS_BASE_URL"))
 		if _, err := url.Parse(jenkinsURL); err != nil {
-			log.Fatal("JENKINS_GITHUB_HOOK_URL must be provided")
+			log.Fatal("JENKINS_BASE_URL must be provided")
 		}
-		log.Fatal(toJenkins(jenkinsURL))
+		log.Fatal(toJenkins(strings.TrimRight(jenkinsURL, "/")))
 	}
 
 	authKey = strings.TrimSpace(os.Getenv("GITHUB_WEBHOOK_SECRET"))
